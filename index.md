@@ -7,4 +7,4 @@
 
 ## HW 1
 
-[Here](files/HW1/TolgahanIskender-HW1.html) is the HW 0 file.
+[Here](files/HW1/TolgahanIskender-HW1.html) is the HW 1 file.
