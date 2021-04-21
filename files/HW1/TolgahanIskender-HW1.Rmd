@@ -1,0 +1,201 @@
+---
+title: "TolgahanIskender-HW1"
+author: "TolgahanIskender"
+date: "19-04-2021"
+output: html_document
+---
+# Understanding the relationships between CPI, Interest Rates and Number of Houses Sold by using Data Visualization
+
+## 1) Introduction
+
+For this homework, I tried to understand the relationships between CPI, Interest Rates and the number of houses sold for each month, betwwen January-2013 and March-2021
+
+I used the data provided by EVDS for these three measures of interest and I also benefited from Google Trends for finding the search volumes of two related keywords: "Satılık Daire" and "Kredi"
+
+## 2) Preparing data for visualization
+### 2.1) Loading Necessary Packages
+```{r, echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+library("readxl")
+library("ggplot2")
+library("usethis")
+library("devtools")
+library("scales")
+library("zoo")
+```
+
+### 2.2) Gathering and Merging Data
+
+I downloaded the datasets from EVDS database in .xlsx format and merged them under a data frame: `alldata` for ease of plotting with GGplot package. All of the datasets are for the time frame between January-2013 and March-2021. 
+
+I converted the given dates to the standard format.
+
+I displayed the first few rows of the dataset with `head()` function
+
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+HouseSales<-read_excel("EVDS-KonutSatisi.xlsx")
+HouseSales$Dates<-paste0(HouseSales$Dates, rep("-15",length(HouseSales$Dates)))
+HouseSales$Dates<-as.Date(HouseSales$Dates)
+
+InterestRates<-read_excel("EVDS-TuketiciKredisiFaizleri.xlsx")
+InterestRates$Dates<-paste0(InterestRates$Dates, rep("-15",length(InterestRates$Dates)))
+InterestRates$Dates<-as.Date(InterestRates$Dates)
+
+CPI<-read_excel("EVDS-cpi.xlsx")
+CPI$Dates<-paste0(CPI$Dates, rep("-15",length(CPI$Dates)))
+CPI$Dates<-as.Date(CPI$Dates)
+
+KrediSearch<-read.csv("Kredi.csv")
+KrediSearch$Dates<-paste0(KrediSearch$Dates,rep("-15",length(KrediSearch$Dates)))
+KrediSearch$Dates<-as.Date(KrediSearch$Dates)
+
+SatilikDaire<-read.csv("SatilikDaire.csv")
+SatilikDaire$Dates<-paste0(SatilikDaire$Dates,rep("-15",length(SatilikDaire$Dates)))
+SatilikDaire$Dates<-as.Date(SatilikDaire$Dates)
+
+alldata<-data.frame(cbind(CPI$Dates,CPI$CPI,HouseSales$HouseSales,InterestRates$InterestRate,KrediSearch$SearchVolume,SatilikDaire$SearchVolume))
+
+alldata$X1<-as.Date(alldata$X1)
+colnames(alldata)<-c("Dates","CPI", "HouseSales", "InterestRate", "KrediSearch", "SatilikDaire")
+```
+
+## 3) Visualizing the datasets and their relations
+### 3.1) Number of Houses Sold in Turkey 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=alldata)+geom_line(mapping=aes(x=Dates,y=HouseSales),size=1.1,colour="512FDC")+
+  geom_point(mapping=aes(x=Dates,y=HouseSales),colour="#512FDC",size=3)+
+  labs(title = "Number of Houses Sold in Turkey", x = "Date",y = "Number of Units",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Source: EVDS")+
+  theme_bw()+ theme(plot.title = element_text(color = "#512FDC", size = 20, face = "bold",hjust=0.5),
+                    plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5),
+                    plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))+
+  geom_smooth(mapping=aes(x=Dates,y=HouseSales),method = lm, color = "darkblue")
+
+```
+
+The data clearly shows that the number of houses sold varies heavily from month to month. The seasonality is explained with various factors. People tend to buy more houses in Spring and Summer compared to other months, some of the seasonality of the data is explainable like this. When we inspect each year, we see that sales are usually lower in winter months. 
+
+The data also displays an overall increasing trend, which may be explained with the increasing population. Although the mean of the houses sold increase, the variance started to increase heavily after the second half of 2019, this can be explained by the financial instability of the country in these years and the constantly changing  interest rates.
+
+The sudden increase in mid 2020 can be explained by the governmental policy to reduce interest rates  to reduce COVID-19 effects. 
+
+## 3.2) Interest Rate in Turkey
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=alldata)+geom_line(mapping=aes(x=Dates,y=InterestRate),size=1.1,colour="512FDC")+
+  geom_point(mapping=aes(x=Dates,y=InterestRate),colour="#512FDC",size=3)+
+  labs(title = "Interest Rates in Turkey", x = "Date",y = "Interest Rate %",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Source: EVDS")+
+  theme_bw()+ theme(plot.title = element_text(color = "#512FDC", size = 20, face = "bold",hjust=0.5), 
+                    plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5),
+                    plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))+
+  geom_smooth(mapping=aes(x=Dates,y=InterestRate),method = lm, color = "darkblue")
+
+```
+
+The data displays an overall increasing trend over time. The fluctuations in the interest rate became much more sewere in the second half of 2018. 
+
+It is also easy to see the effect of the decision to reduce interest rates in 2020 due to COVID-19 pandemic on the graph.
+
+## 3.3) Percent Change in the CPI in Turkey
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=alldata)+geom_line(mapping=aes(x=Dates,y=CPI),size=1.1,colour="512FDC")+
+  geom_point(mapping=aes(x=Dates,y=CPI),colour="#512FDC",size=3)+
+  labs(title = "CPI in Turkey", x = "Date",y = "Consumer Price Index",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Source: EVDS")+
+  theme_bw()+ theme(plot.title = element_text(color = "#512FDC", size = 20, face = "bold",hjust=0.5), 
+                    plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5),
+                    plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))+
+  geom_smooth(mapping=aes(x=Dates,y=CPI),method = lm, color = "darkblue")
+```
+
+The percent change in the CPI is also referred as the inflation. It shows amount of price increase of all goods and services of a country. 
+
+By looking at the graph, we can easily see that the rate at which that things are getting expensive has an increasing trend. The variance has significantly increased after mid-2018, due to the political and economic turbulence in the country at the time. 
+
+## 3.4) Google Trends data for keywords: "Kredi" and "Satılık Daire"
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=alldata, aes(x=Dates)) + geom_line(aes(y=SatilikDaire),size=1.5, colour="#512FDC")+
+  geom_line(aes(y=KrediSearch),size=1.5)+ theme_bw()+
+  labs(title = "Google Search Volumes", x = "Date",y = "Search Volume",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Black: Search Volume of 'Kredi'
+Purple: Search Volume of 'Satilik Ev' 
+Source: Google Trends")+
+  theme(plot.title = element_text(color = "#512FDC", size = 20, face = "bold",hjust=0.5), axis.title.x=element_text(colour="Dark Green", face="bold"),
+        axis.title.y=element_text(colour="Dark Green", face="bold"),
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5),
+        plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+```
+
+In the plot above, the line colored black represents the search volume of keyword "Kredi" and the purple line represents "Satılık Daire". 
+
+It is easy to see and very logical that these keywords are usually very correlated. Most of the people require some loan to be able to purchase a house so it is no surprise that these keywords move together. 
+
+There is a slight lag between the two, the increase or decreases in the volume of "Kredi" is usually shortly after followed by "Satılık Daire". This may be explained as people are looking for reasonable loans before searching for a house.
+
+With a similar logic, we can find a relationship between the number of houses sold and the interest rate in the economy, since lower interest rates are an incentive for individuals to borrow. 
+
+## 4) Relationships between datasets
+### 4.1) Number of Houses Sold vs Search Volume of "Satılık Daire"
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+scale<- max(alldata$HouseSales)/max(alldata$SatilikDaire)
+
+ggplot(data=alldata, aes(x=Dates))+geom_line(aes(y=SatilikDaire*scale),size=1.5,colour="#512FDC")+
+  geom_line(aes(y=HouseSales),size=1.5)+ theme_bw()+ labs(title = "Search Volume of 'Satılık Daire' vs Number of Houses Sold in TUrkey", x = "Date",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Black: Number of Houses Sold
+Purple: Search Volume of 'Satılık Daire' 
+Source: Google Trends, EVDS") + scale_y_continuous("Number of Houses Sold", sec.axis=sec_axis(~./scale, name="Google Search for 'Satılık Daire'"))+
+  theme(axis.title.y = element_text(color = "black", face = "bold"),axis.title.y.right = element_text(colour="#512FDC",face="bold"),plot.title = element_text(color = "dark green", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Green", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+  
+```
+
+The black lines represent the Number of Houses Sold in Turkey, and the purple lines indicate the search volume of "Satılık Daire".
+
+By looking at the plot above, it is easy to see that the search volume of "Satılık Daire" moves in correlation with the number of houses sold in Turkey. The sharp increase in the number of houses sold and search volume in late 2020 can be explained by lowered interest rates due to the economic effect of COVID-19. Lower interest rates are an incentive to borrow and borrowing leads to house sales, we will explain the relationship between House Sales and Interest Rates further. 
+
+### 4.2) Number of Houses sold vs Interest Rate
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+scale2<-max(alldata$HouseSales)/max(alldata$InterestRate)
+
+ggplot(data=alldata, aes(x=Dates))+geom_line(aes(y=HouseSales),size=1.5,colour="#512FDC")+
+  geom_line(aes(y=InterestRate*scale2),size=1.5)+ theme_bw()+ labs(title = "Interest Rates and Number of Houses Sold", x = "Date",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Black: Interest Rate
+Purple: Number of Houses Sold 
+Source: EVDS")+ scale_y_continuous("Number of Houses Sold", sec.axis=sec_axis(~./scale2, name="Interest Rates (%)"))+
+  theme(axis.title.y = element_text(color = "#512FDC", face = "bold"),axis.title.y.right = element_text(colour="black",face="bold"),plot.title = element_text(color = "dark green", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Green", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+```
+In the plot above, the black lines represent the Interest Rate and the purple line represents the Number of Houses Sold. 
+
+It is as expected that these measures usually move oppositely. An increase in the interest rate leads to a decrease in the number of houses sold and vice versa. 
+
+In 2019, we can see the effect of high interest rates resulting lower than usual houses sold. And in 2020, as I mentioned previously the government lowered interest rates to reduce the effect of COVID-19 on the economy and it is easily seen from the plot that this resulted in a sharp increase in the number of houses sold.
+
+### 4.3) Interest Rate vs CPI 
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=alldata, aes(x=CPI,y=InterestRate))+geom_point(colour="#512FDC")+theme_bw()+
+  labs(title = "Interest Rate vs CPI (% change)",y="Interest Rate (%)", x = "CPI (% change)",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Source: EVDS")+
+  geom_smooth(method = lm, color = "dark red")+ theme(axis.title.y = element_text(color = "#512FDC", face = "bold"),plot.title = element_text(color = "dark green", size = 15, face = "bold",hjust=0.5), 
+       plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="#512FDC", face="bold"),
+       plot.caption = element_text(face = "italic", hjust = 0))
+```
+
+The plot above displays the scatter plot of percent change in the CPI versus the Interest Rate. 
+CPI and interest move in a positive correlation. Also, considering the knowledge from the Macroeconomics course, this result is not surprising.
+
+### 4.4) Number of Number of Houses Sold vs Search Volume of "Kredi"
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+scale3<- max(alldata$HouseSales)/max(alldata$KrediSearch)
+
+ggplot(data=alldata, aes(x=Dates))+geom_line(aes(y=KrediSearch*scale3),size=1.5,colour="#512FDC")+
+  geom_line(aes(y=HouseSales),size=1.5)+ theme_bw()+ labs(title = "Search Volume of 'Kredi' vs Number of Houses Sold in TUrkey", x = "Date",subtitle = "Data from Jan-2003 to Mar-2021",caption = "Black: Number of Houses Sold
+Purple: Search Volume of 'Kredi' 
+Source: Google Trends, EVDS") + scale_y_continuous("Number of Houses Sold", sec.axis=sec_axis(~./scale, name="Google Search for 'Kredi'"))+
+  theme(axis.title.y = element_text(color = "black", face = "bold"),axis.title.y.right = element_text(colour="#512FDC",face="bold"),plot.title = element_text(color = "dark green", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Green", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+```
+
+The black lines represent the number of houses sold and and the purple lines represent the search volume of "Kredi". As mentioned earlier it is easily seen and not surprising that these measures are highly correlated.
