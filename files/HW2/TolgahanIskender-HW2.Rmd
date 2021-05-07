@@ -1,0 +1,346 @@
+---
+title: "Spring'21 IE360 HW 2"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+---
+
+### Tolgahan Iskender
+### 2017402180
+
+# 1) Introduction
+
+In this assignment, our goal is to forecast the CPI (Food and Non-Alcoholic Beverages), using some economic measures. By using the regressors and the target variable, we will create a time series regression model to forecast the future month. 
+
+My target variable in this study is the CPI (Food and Non-Alcoholic Beverages) in Turkey and the independent variables are: USD/TRY Exchange Rate, Interest Rates and Domestic PPI (Producer Price Index). By inspecting the relationships and correlations between the target variable and the independent variables, the final model will be created. 
+
+In addition to these, it will be decided which time series components and lag values should be included in the model and the model will be created. At each step, the model performance values will be evaluated and whether the assumptions about residuals are met or not. Recall that the assumptions about residuals are:
+
+• Residuals are normally distributed with zero mean and constant variance.
+
+• Residuals are not autocorrelated.
+
+# 2) Analysis
+
+• The time series data are imported from EVDS. Required packages are downloaded and the data is manipulated into a proper format for future operations. 
+
+```{r Intro, message=FALSE, warning=FALSE, paged.print=FALSE}
+library(readxl)
+library(data.table)
+library(forecast)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(stats)
+library(GGally)
+
+alldata=read_excel("EVDS-AllData.xlsx")
+alldata=as.data.table(alldata)
+alldata$Date=as.Date(alldata$Date)
+head(alldata)
+str(alldata)
+```
+## 2.1) Target Variable Visualizaiton
+
+• Visualizing the target variable over time is very useful in order to understand its behavior. 
+
+```{r , message=FALSE, warning=FALSE, paged.print=FALSE}
+
+ggplot(data=alldata, aes(x=Date, y=CPI))+geom_line(size=1.5,colour="#512FDC")+ 
+  theme_bw()+
+  labs(title = "CPI (Food & Non-Alcoholic Beverages) in Turkey", x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") + 
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+```
+
+• Taking the logarithm of our target value:CPI is benefical in that case since it helps linearizing our target variable. 
+
+
+```{r}
+alldata$CPI=log(alldata$CPI)
+ggplot(data=alldata, aes(x=Date, y=CPI))+geom_line(size=1.5,colour="#512FDC")+ 
+  theme_bw()+
+  labs(title = "log(CPI (Food & Non-Alcoholic Beverages)) in Turkey", x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") + 
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+```
+
+• After taking the logarithm of CPI, it is easily seen that the plot is switched to a more linear one. 
+
+
+## 2.2) Visualization of Independent Variables 
+
+• Using the 'ggpairs' function, we are able to inspect the correlation between all variables, pdf of variables and the scatterplots between variables.
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+ggpairs(alldata)
+```
+
+• By looking at the output from "ggpairs" function, we can easily conclude that the correlation between variables are significantly high and our independent variables are therefore very helpful for predicting the target variable. 
+
+• When we inspect the highest correlated pairs: USDExchange-CPI (corr: 0.952) and PPI-CPI (corr: 0.959), we observe that the scatterplots of pairs are very close to linear and this verifies our claim that the independent variables chosen are relevant and good predictors for our target variable.
+
+• As well as the CPI variable, USD Exchange Rate and PPI variables also display a nonlinear behavior over time. By taking the logarithms of these variables we might improve our model. When the logarithm of these values are plotted with their original values, it is easily seen that both variables have become more linear with this operation.
+
+```{r}
+par(mfrow=c(2,2))
+plot(alldata$USDexchange, ylab="USD Exchange")
+plot(log(alldata$USDexchange), ylab="log(USD Exchange)")
+
+
+plot(alldata$DomesticPPI, ylab="PPI")
+plot(log(alldata$DomesticPPI),ylab="log(PPI)")
+```
+
+• Compared with the previous plots, logarithmic plots of `USDDexchange` and `DomesticPPI`are more linear, thus preferable for us.
+
+## 2.3) Time Series Modelling
+### 2.3.1) Trend Component
+
+• Since we know that both the CPI and and log(CPI) increase in time, we can start by adding a trend variable to decompose the trend component of the time series regression model.
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+alldata[,trend:=1:.N]
+
+ts_reg=lm(log(CPI)~trend, alldata)
+summary(ts_reg)
+alldata[,trend_constant:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="Actual"),size=1.2)+
+  geom_line(aes(y=trend_constant,color='Trend'),size=1.2)+
+  labs(title = "Trend vs Actual", x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+```
+
+• When our model's predictions and the actual observations are plotted together, we observe that even a simple trend variable very helpful in predicting the log of the prices.
+
+• Our adjusted R^2 value is relatively high and p value is very significant, which shows the succes of adding the trend variable.
+
+### 2.3.2) Month Component
+
+• By adding a month variable, we may be able to model the seasonality of our target variable. 
+
+```{r}
+alldata[,month:=as.character(month(Date,label=1))]
+
+ts_reg=lm(log(CPI)~trend+month,alldata)
+summary(ts_reg)
+checkresiduals(ts_reg$residuals,lag=12)
+
+alldata[,trend_constant_month:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="Actual"),size=1.2)+
+  geom_line(aes(y=trend_constant,color='Trend and Month'),size=1.2)+
+  labs(title = "Trend and Month vs Actual", x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+```
+
+• By looking at the output of `summary()` function, we can conclude that March has the most significant effect on the model, followed by April, February and January respectively. Rest of the months don't have a significant effect on the performance of model. We can also observe from our regression plot that the month variable does not have too much effect on the performance of the model. 
+
+• Since our Adjusted R^2 value is better wrt to the previous, we will proceed with the current model.
+
+• By inspecting the `checkresiduals()` function's output, it is clear that the linear regression assumptions are violated and there is a high autocorrelation between predictions, all those indicate that our model needs more correction.
+
+### 2.3.3) USD/TRY Exchange Rate
+
+• In order to improve our model, the selected regressor USD/TRY Exchange Rate should be added to the model. 
+
+• As mentioned earlier, the time series distribution of `USDexchange` is not linear and it can become more linear by taking its logarithm. When we check the correlations with our target variable: `log(CPI)` for `USDexchange` and `log(USDexchange)`, it is seen that the correlation is higher when we take the logarithm of the independent variable so we decide to use the logarithmic function. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+cor(log(alldata$USDexchange),log(alldata$CPI))
+cor(alldata$USDexchange,log(alldata$CPI))
+
+ts_reg=lm(log(CPI)~trend+month+log(USDexchange),alldata)
+summary(ts_reg)
+
+alldata[,regrline:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="log(Actual)"),size=1.2)+
+  geom_line(aes(y=regrline,color='Regression'),size=1.2)+
+  labs(x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+checkresiduals(ts_reg$residuals)
+```
+
+• When compared with the previous model, our adjusted R^2 value has increased, and the p-value of the `log(USDexchange` is significant. 
+• The plot of the current regression model with the actual data also displays that our model has improved by the addition of the variable. 
+• Even though our zero mean and constant variance assumptions for the residuals seem to improve, and the histogram of the residuals is in a closer shape to the normal distribution, there still is a high auto correlation and residuals can be further improved.
+
+### 2.3.4) Domestic PPI (Producer Price Index)
+
+• Similar to the variable USDexhange, DomesticPPI also has a nonlinear distribution and taking the natural logarithm of the variable relatively linearizes it. Also when we check the correlations, we see that chosing the logarithmic version is more beneficial for the model
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+cor(log(alldata$DomesticPPI),log(alldata$CPI))
+cor(alldata$DomesticPPI,log(alldata$CPI))
+
+ts_reg=lm(log(CPI)~trend+month+log(USDexchange)+log(DomesticPPI),alldata)
+summary(ts_reg)
+
+alldata[,regrline:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="log(Actual)"),size=1.2)+
+  geom_line(aes(y=regrline,color='Regression'),size=1.2)+
+  labs(x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+checkresiduals(ts_reg$residuals)
+
+```
+
+• With the addition of the new variable, our adjusted R^2 value has increased and when the `summary` function is inspected, we see that our regressor is significant. 
+
+• Zero mean assumption for the residuals seem to hold slightly better. The plot also displays that our model mostly fits the actual data.
+
+### 2.3.5) Interest Rate
+
+• The final data which we will add to our model is `Interest Rate`.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+ts_reg=lm(log(CPI)~trend+month+log(USDexchange)+log(DomesticPPI)+InterestRates,alldata)
+summary(ts_reg)
+
+alldata[,regrline:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="log(Actual)"),size=1.2)+
+  geom_line(aes(y=regrline,color='Regression'),size=1.2)+
+  labs(x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+checkresiduals(ts_reg$residuals)
+
+```
+
+• With the addition of the new variable, our adjusted R^2 value has increased and when the `summary` function is inspected, we see that our regressor is slightly significant with a p-value of 0.016.
+
+• There isn't a significant improvement on the residuals and we can still observe a high autocorrelation. We must work further on to improve the solidity of our initial assumptions of zero mean and constant variance. 
+
+### 2.3.6) Lag
+
+• The ACF plot for residuals display a high lag1 value. In order to eliminate this autocorrelation in our model, we must add `lag1` to our model. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+alldata[, residuals:=residuals(ts_reg)]
+alldata[, lag1:=shift(residuals(ts_reg),1)]
+
+ts_reg=lm(log(CPI)~trend+month+log(USDexchange)+log(DomesticPPI)+InterestRates+lag1,alldata)
+summary(ts_reg)
+
+alldata[,regrline:=predict(ts_reg,alldata)]
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="log(Actual)"),size=1.2)+
+  geom_line(aes(y=regrline,color='Regression'),size=1.2)+
+  labs(title="Regression with Lag Variable",x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+checkresiduals(ts_reg$residuals)
+```
+ 
+• By inspecting the `summary()` function output, it can be concluded that the addition of the lag1 variable improved our model in terms of adjusted R^2 value and Residual Standard Error. Also the lag1 variable has a significant p-value of 2e-16.
+
+• The benefit of adding `lag1` is also visible by looking at the plot of Actual vs Regression. Our predicted values are very close to the actual data.
+
+• The most important benefit of adding `lag1` is seen at the output of `checkresiduals` function. The ACF plot shows very little and negligible autocorrelation when compared with the previous models. Also the residuals are more similar to random white noise and our assumptions are more solid. 
+
+## 2.4)Scatterplot Analysis
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+ggplot(data=alldata)+ geom_point(aes(y=log(CPI), x=regrline))+
+  labs(title="Actual vs Fitted Scatterplot",x = "Fitted Values",y="Actual Values",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0)) + geom_abline(slope=1,color="red")
+
+```
+• From the first plots, it can be seen that the mean of residuals is close to 0 and the variance is constant except for a small number of outliers. Also, the last plot shows how well the predicted CPI fits the actual values.
+
+## 2.5) Forecasting
+
+• This study aims to forecast the CPI value in 2021-04, so we must first predict our regressors and than we can move on to predicting our target variable. 
+
+• For all independent variables, `predict` function is used to predict the values in 2021-4. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+alldata=rbind(alldata, data.table(Date= as.Date("2021-04-01")),fill=T)
+alldata[160,trend:=160]
+
+predict(alldata$USDexchange)
+alldata[160, USDexchange:=7.706787]
+
+predict(alldata$InterestRates)
+alldata[160, InterestRates:=21.70647]
+
+predict(alldata$DomesticPPI)
+alldata[160, DomesticPPI:=632.9363]
+
+predict(alldata$lag1)
+alldata[160, lag1:=-0.000101186]
+
+alldata[160,month:=as.character(month(Date,label=1))]
+
+
+ts_reg=lm(log(CPI)~trend+month+log(USDexchange)+log(DomesticPPI)+InterestRates+lag1,alldata)
+summary(ts_reg)
+
+alldata[,regrline:=predict(ts_reg,alldata)]
+
+```
+
+
+• Since we took the log() of our target variable, we must take the exponential of the prediction in order to get our target value. 
+
+• Our final plot shows that our model fits very closely with the actual data.
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+forecast=exp(alldata$regrline[160])
+forecast
+
+ggplot(data=alldata, aes(x=Date))+ geom_line(aes(y=log(CPI),color="log(Actual)"))+
+  geom_line(aes(y=regrline,color='Regression'))+
+  labs(title="Final Plot",x = "Date",subtitle = "Data from Jan-2008 to Mar-2021",caption = "Source:EVDS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+
+
+```
+
+# 3) Conclusion
+
+• In this study our aim was to build a model and forecast the future values of CPI(Food & Non-Alcoholic Beverages) using selected independet variables. Step by step we have included these parameters in our model by checking their significancy, correlation and the adjusted R^2 values after the model is created. We have also included trend and seasonality components and a lag variable in order to make our regression assumptions hold and decrease the autocorrelation. 
+
+• In the end, the estimation of our target variable for 2021-04 is 6.505 with an adjusted R^2 value of 0.9985, which is a actually a very good result. As soon as the data for the new month is available, we can check the validity of our forecast.

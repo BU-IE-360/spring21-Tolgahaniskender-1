@@ -8,3 +8,7 @@
 ## HW 1
 
 [Here](files/HW1/TolgahanIskender-HW1.html) is the HW 1 file.
+
+## HW 2
+
+[Here](files/HW2/TolgahanIskender-HW2.html) is the HW 1 file.
