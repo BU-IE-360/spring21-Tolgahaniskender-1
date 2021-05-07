@@ -11,4 +11,4 @@
 
 ## HW 2
 
-[Here](files/HW2/TolgahanIskender-HW2.html) is the HW 1 file.
+[Here](files/HW2/TolgahanIskender-HW2.html) is the HW 2 file.
