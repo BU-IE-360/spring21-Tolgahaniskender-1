@@ -1,0 +1,581 @@
+---
+title: "Spring'21 IE360 HW 3"
+output:
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_float: yes
+---
+
+# 1) Introduction
+
+In this assignment, our goal is to forecast the Hourly Electricity Consumption between 6th of May 2021 and 20th of May 2021, using AR and MA models. The data is provided by EPİAŞ. 
+
+In order to make the forecast as accurate as possible, the data must be stationarized. Necessary tests and and operations are done in order to stationarize the data. KPSS test is a good way to check for stationarity of the data. Also, recall that the assumptions about the residuals are:
+• Residuals are normallay distributed with zero mean and constant variance.
+• Residuals are not autocorrelated.
+
+After the forecasting application is done, actual data is compared with the fitted results in order to measure the accuracy of the forecast, using some error measures.
+
+# 2) Analysis
+## 2.1) Data Manipulation
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(data.table)
+library(ggplot2)
+library(zoo)
+library(urca)
+library(scales)
+library(stats)
+library(readxl)
+
+```
+
+• The data is converted in to a `data.table` object, and the types of columns are changed as necessary. Column names are changed, and some necessary operations are performed.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+consdata=read.csv("C:/Users/tolga/Desktop/OKUL/IE 360/HWs/HW3/GercekZamanliTuketim-01012016-06052021.csv")
+
+consdata$Tarih=as.Date(consdata$Tarih, format= "%d.%m.%Y")
+consdata$Tarih=as.Date(consdata$Tarih, format= "%Y-%m-%d")
+
+consdata$Tüketim.Miktarı..MWh.=gsub("\\.", "", (consdata$Tüketim.Miktarı..MWh.))
+consdata$Tüketim.Miktarı..MWh.=gsub("\\,", ".", (consdata$Tüketim.Miktarı..MWh.))
+#consdata$Tarih=gsub("\\-", ".", (consdata$Tarih))
+
+
+consdata$Tüketim.Miktarı..MWh.=as.numeric(consdata$Tüketim.Miktarı..MWh.)
+
+colnames(consdata)=c("Date","Time","Consumption")
+
+consdata=as.data.table(consdata)
+
+consdata[,DateTime:=paste(Date,Time)]
+consdata[,DateTime:=as.POSIXct(DateTime, format = "%Y-%m-%d %H:%M")]
+
+head(consdata)
+
+```
+
+## 2.2) Data visualization
+
+• In order to better understand the data, the time series is visualized.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+ggplot(data=consdata, aes(x=DateTime, y=Consumption))+geom_line(size=0.5,colour="#512FDC")+
+  theme_bw()+
+  labs(title = "Hourly Electricity Consumption in Turkey", x = "Date",subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPIAS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5),
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))
+
+```
+
+• When the behavior of the data is observed over the time period, it is easy to see that the data is highly seasonal and there is an increasing trend. Our effort will be on decomposing the seasonality and trend components in order to stationarize the data in the following operations. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+acf(consdata$Consumption)
+pacf(consdata$Consumption)
+```
+
+• The high auto-correlation at lag:24 tells us that the data shows daily seasonality, and the partial autocorrelations verify that hypothesis.
+
+## 2.3) Model Selection and Seasonality Inspection 
+
+• In this section, we will decompose our data in different time windows: hourly, daily, weekly and monthly, and check for the stationarity of the random components. We will also try to observe different types of seasonality in the data
+
+### 2.3.1) Hourly Decomposition
+• In order to decompose the data with the `decompose` funtion, first we must convert to data into a time series object.
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE, results='hide'}
+tshourlyconsdata=ts(consdata$Consumption, freq=24)
+tail(tshourlyconsdata)
+head(tshourlyconsdata)
+length(tshourlyconsdata)
+
+hourlydec1=decompose(tshourlyconsdata, type="additive")
+hourlydec2=decompose(tshourlyconsdata, type="multiplicative")
+
+hourlydec1
+hourlydec2
+
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+plot(hourlydec1)
+
+plot(hourlydec2)
+```
+
+• The plots display the behavior of trend, seasonal and random component of the data over time. 
+
+• After the decomposition, I decided that the additive decomposition method better fits our dataset, since it does not display increasing variance over time. In order to test that hyptohesis, KPSS test can be performed for the `random` commponents of additive and multiplicative decomposition to see which method is more helpful in order to stationarize the data
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+additivetest=ur.kpss(hourlydec1$random, use.lag="24")
+summary(additivetest)
+
+multiplicativetest=ur.kpss(hourlydec2$random, use.lag="24")
+summary(multiplicativetest)
+
+```
+
+• When the test statistics of the KPSS test for additive and multiplicative decomposition is observed, it is seen that the test value of additive decomposition is much lower than multiplicative decomposition and this indicates that random component is more stationarized. This confirms our initial hypothesis that additive decomposition is more helpful for use.
+
+• All the decompositions performed after here on, will be additive decompositions.
+
+### 2.3.2) Daily Mean Data Decomposition
+
+• To see how the data behaves over days, we take the means of hourly consumption data for each date and inspect the data.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+dailyconsdata=consdata[,list(meanconsumption=mean(Consumption, na.rm = T)),by=list(Date)]
+str(dailyconsdata)
+head(dailyconsdata)
+
+ggplot(dailyconsdata, aes(x=Date, y= meanconsumption)) + geom_line(size=0.5,colour="#512FDC")+
+  theme_bw()+
+  labs(title = "Daily Mean of Hourly Electricity Consumption in Turkey", x = "Date", y="Daily Mean of Hourly Consumption (MwH)", subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPIAS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5),
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))
+
+```
+
+• To better see the weekly seasonality in the data, it is beneficial to take a closer look. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+plot(dailyconsdata$meanconsumption[15:28], type="l", ylab="Daily Mean Consumption (MwH)", main="2 Weeks Daily Mean Consumption", xlab="Days")
+points(dailyconsdata$meanconsumption[29:42], type="l",col="red")
+```
+
+• As it is seen from the plots, the behavior of the data in different time frames each of 2 weeks length is very similar and displays seasonality. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+urtest1=ur.kpss(dailyconsdata$meanconsumption, use.lag="7")
+summary(urtest1)
+#comment on test results:
+#mention that it is high and we reject the null hypothesis that: the data is stationary
+
+
+
+pacf(dailyconsdata$meanconsumption)
+acf(dailyconsdata$meanconsumption)
+```
+
+• The KPSS test of the Daily Mean Consumption data shows that the data is not stationary. 
+• Also, the `acf` and `pacf` functions displays that data is weekly autocorrelated, with lag: 7. 
+
+• In order to stationarize the data, we must decompose it by transforming it into a time series object. Since previously we decided that additive decomposition works better, we will proceed with this method.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+tsdailyconsdata=ts(dailyconsdata$meanconsumption,freq=7)
+head(tsdailyconsdata)
+length(tsdailyconsdata)
+
+dailydec1=decompose(tsdailyconsdata, type="additive")
+plot(dailydec1)
+
+dailyurtest=ur.kpss(dailydec1$random, use.lag="7")
+summary(dailyurtest)
+
+```
+• The KPSS test shows that the data is stationary. The random component has some spikes due to outlier days (Public Holidays, Religious Holidays etc.) but other than these days, mean and variance seem stationary.
+
+### 2.3.3) Weekly Mean Data Decomposition
+
+• To see how the data behaves over weeks, we take the means of hourly consumption data for each week and inspect the data.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+weeklyconsdata=dailyconsdata[,list(weeklymeanconsumption=mean(meanconsumption, na.rm = T)),by=list(week(Date),year(Date))]
+
+ggplot(weeklyconsdata, aes(x=c(1:284), y= weeklymeanconsumption)) + geom_line(size=0.5,colour="#512FDC")+
+  theme_bw()+
+  labs(title = "Weekly Mean of Hourly Electricity Consumption in Turkey", x = "Weeks", y="Weekly Mean of Hourly Consumption (MwH)", subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPIAS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5),
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))
+
+```
+• To better see the seasonality in the data, inspecting a smaller time frame can be useful.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+plot(weeklyconsdata$weeklymeanconsumption[1:52], type="l",ylab="Weekly Mean Consumption (MwH)", main="Weekly Mean Consumption over a Year", xlab="Weeks",ylim=c(26000,39000))
+points(weeklyconsdata$weeklymeanconsumption[53:104], type="l",col="red")
+
+pacf(weeklyconsdata$weeklymeanconsumption,lag.max=110)
+acf(weeklyconsdata$weeklymeanconsumption, lag.max=110)
+```
+
+• As it is seen from the plots, the behavior of the data in different time frames each of 1 year length is very similar and displays seasonality. 
+• The autocorrelation and partial autocorrelation functions display an autocorrelation over 52 weeks as expected.
+• We must try to eliminate this seasonality and stationarize the time series data by decomposition. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+tsweeklyconsdata=ts(weeklyconsdata$weeklymeanconsumption,freq=53)
+tail(tsweeklyconsdata)
+head(tsweeklyconsdata)
+
+weeklydec1=decompose(tsweeklyconsdata, type="additive")
+plot(weeklydec1)
+
+weeklyurtest=ur.kpss(weeklydec1$random,use.lag=52)
+summary(weeklyurtest)
+
+```
+
+• After decomposing the data, the KPSS test tells us that the random component of the data is stationary. Also, by looking at the trend variable, we can see that there is an increasing trend. 
+
+### 2.3.4) Monthly Mean Data Decomposition
+
+• To see how the data behaves over months, we take the means of hourly consumption data for each month and inspect the data.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+monthlyconsdata = dailyconsdata[, list(monthlymeanconsumption=mean(meanconsumption, na.rm=TRUE)), by=list(month(Date), year(Date))]
+
+ggplot(monthlyconsdata, aes(x=c(1:65),y= monthlymeanconsumption)) + geom_line(size=0.5,colour="#512FDC")+
+  theme_bw()+
+  labs(title = "Monthly Mean of Hourly Electricity Consumption in Turkey", x = "Months", y="Monthly Mean of Hourly Consumption (MwH)", subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPIAS") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5),
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))
+```
+
+• To better see the seasonality in the data, inspecting a smaller time frame can be useful.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+plot(monthlyconsdata$monthlymeanconsumption[1:12], type="l",ylab="Monthly Mean Consumption (MwH)", main="Monthly Mean Consumption over a Year", xlab="Months",ylim=c(28000,38000))
+points(monthlyconsdata$monthlymeanconsumption[13:24], type="l",col="red")
+
+pacf(monthlyconsdata$monthlymeanconsumption)
+acf(monthlyconsdata$monthlymeanconsumption)
+```
+
+• By inspecting the plots, the behavior of the data in different time frames each of 1 year length is very similar and displays seasonality over the months
+• ACF and PACF functions show that there the data is autocorrelated with lag 12, as expected.
+• In order to eliminate the seasonality and stationarize the data, decomposing operations will be performed.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+tsmonthlyconsdata=ts(monthlyconsdata$monthlymeanconsumption,freq=12)
+head(tsmonthlyconsdata)
+
+monthlydec1=decompose(tsmonthlyconsdata, type="additive")
+plot(monthlydec1)
+
+monthlyurtest=ur.kpss(monthlydec1$random, use.lag="12")
+summary(monthlyurtest)
+#mention data is stationary when monthly decomposed
+
+#plot güzelleştir, decompose plot ekle
+#additive vs multiplicative karşılaştır
+#Ljung box test yap, veya kpss test yap
+```
+
+• When the data is decomposed, thre results of the KPSS test shows that the random component of the data is stationary. Also, by looking at the trend variable, we can see that there is an increasing trend. 
+
+## 2.4) Model Decomposition
+
+• The data is inspected in hourly, daily, weekly and monthly basis to choose an appropriate frequency to decompose the seasonality component.
+
+• After inspections, it is decided that a frequency value of "168" is the best selection. By assigning 168 as the frequency, we can model the effect of both hours and the days on seasonality. 
+
+• In order to make our forecasts, we should initially decompose ans stationarize our data.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+tshourlyconsdata168=ts(consdata$Consumption,freq=168)
+head(tshourlyconsdata168)
+
+ts168dec1=decompose(tshourlyconsdata168, type="additive")
+plot(ts168dec1)
+
+urtest168=ur.kpss(ts168dec1$random,use.lag="168")
+summary(urtest168)
+```
+
+• After the decomposition, a KPSS test is conducted for the random component of the time series. The resulting test statistic is very small hence we can not reject the null hypothesis that the data is stationary. 
+
+• The data will be decomposed manually up to the random component.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+deseasonalized=tshourlyconsdata168-ts168dec1$seasonal
+plot(deseasonalized)
+
+
+acf(deseasonalized, lag.max = 200)
+
+detrended=deseasonalized-ts168dec1$trend
+plot(detrended)
+acf(detrended, na.action=na.pass, lag.max=200)
+
+test=ur.kpss(detrended,use.lag="168")
+summary(test)
+
+```
+
+• The 7 spikes in the ACF plot of the deseasonalized data shows that the data is daily autocorrelated, when the trend component is removed the autocorrelation is easier to see.
+
+• The autocorrelation in the data can be removed with differencing, however it is out of the scope of this assignment. 
+
+• Not surpsingly, the results of the KPSS test is the same with the KPSS test of the random component, since `detrended` is the random component of the data, that is manually obtained.
+
+# 2.5) AR, MA and ARMA Models
+
+## 2.5.1) AR Models
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+armodel1=arima(detrended, order=c(1,0,0))
+BIC(armodel1)
+AIC(armodel1)
+
+armodel2=arima(detrended, order=c(2,0,0))
+BIC(armodel2)
+AIC(armodel2)
+
+armodel3=arima(detrended, order=c(3,0,0))
+BIC(armodel3)
+AIC(armodel3)
+
+armodel4=arima(detrended, order=c(4,0,0))
+BIC(armodel4)
+AIC(armodel4)
+
+armodel5=arima(detrended, order=c(5,0,0))
+BIC(armodel5)
+AIC(armodel5)
+```
+
+• After testing with different p values for the MA models, it is seen that with p=4, both AIC and BIC tests give a lower result compared to other models. 
+
+• AR Model with p=4 is the best among AR models.
+
+## 2.5.2) MA Models
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+mamodel1=arima(detrended, order=c(0,0,1))
+BIC(mamodel1)
+AIC(mamodel1)
+
+mamodel2=arima(detrended, order=c(0,0,2))
+BIC(mamodel2)
+AIC(mamodel2)
+
+
+mamodel3=arima(detrended, order=c(0,0,3))
+BIC(mamodel3)
+AIC(mamodel3)
+
+
+mamodel4=arima(detrended, order=c(0,0,4))
+BIC(mamodel4)
+AIC(mamodel4)
+
+
+mamodel5=arima(detrended, order=c(0,0,5))
+BIC(mamodel5)
+AIC(mamodel5)
+
+
+mamodel6=arima(detrended, order=c(0,0,6))
+BIC(mamodel6)
+AIC(mamodel6)
+```
+
+• When Moving Average models with different parameters are inspected, it is seen that AIC and BIC values decrease by increasing the q parameter. 
+
+• Among the models above, q=6 gives the best result. Even if q=7 may give a better result, we will proceed with q=6 since increasing q parameter increases our computation time. 
+
+## 2.5.3) ARMA Model
+
+• To build an ARMA model, we will make use of the p and q parameters that give the best result, as selected in the previous sections. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+armamodel=arima(detrended, order=c(4,0,6))
+print(armamodel)
+BIC(armamodel)
+AIC(armamodel)
+```
+
+• The AIC and BIC values of the ARMA model is lower than any of the previous models since this model makes use of both Autoregressive and Moving Average Models. 
+
+• In order to further increase the model, we could use differencing to eliminate autocorrelation in the data, however as mentioned before: we will proceed without using differencing in this report.
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+model_fitted=detrended-residuals(armamodel)
+
+model_fitted_transformed=model_fitted+ts168dec1$trend+ts168dec1$seasonal
+
+consdata[,fitted:=model_fitted_transformed]
+
+ggplot(data=consdata, aes(x=Date))+ geom_line(aes(y=Consumption,color="Actual"),size=0.5)+
+  geom_line(aes(y=fitted,color='Fitted'),size=0.5)+
+  labs(title = "Trend vs Actual", x = "Date",y="Hourly Electricity Consumption (MwH)" ,subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPİAŞ") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+```
+
+• The plot above shows the Actual and Fitted values over the time period up to 6th of May 2021. Currently the fitted values seem to represent the actual data very accurately.
+
+# 3) Forecasting
+
+• In order to forecast for the desired duration of 14 days (14*24=336 data points), it is crucial to notice that the last "84" of the fitted values are missing, because of the MA model with frequency=168. We should forecast both the desired time period and the missing values, so we should take `n.ahead = (84 + 14x24) = 420`
+
+• Also, the appropriate seasonality values must be selected for the time period. By making modular arithmetic calculations, the appropriate seasonality coefficients are chosen for the time period to be forecasted.
+
+• Although the seasonality components are available for future periods, we don't have trend values. For predicting the future values, we will make use of the last trend value obtained from the data.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+nahead=84+14*24
+model_forecast=predict(armamodel, n.ahead=nahead)$pred
+
+last_trend_value=tail(ts168dec1$trend[!is.na(ts168dec1$trend)],1)
+last_trend_value
+
+seasonality=ts168dec1$seasonal[85:(85+419)]
+
+model_forecast_adjusted=model_forecast+last_trend_value+seasonality
+```
+
+• In order to merge the forecasted and actual data and compare our forecast results with the actual data, some data manipulations must be performed. 
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+namatrix=data.table(matrix(nrow=336,ncol=5))
+colnames(namatrix)=colnames(consdata)
+  
+namatrix$Date=as.Date(namatrix$Date)
+namatrix$Time=as.factor(namatrix$Time)
+namatrix$Consumption=as.numeric(namatrix$Consumption)
+namatrix$DateTime=as.POSIXct(namatrix$DateTime)
+namatrix$fitted=as.ts(namatrix$fitted)
+
+consdatanew=rbindlist(list(consdata,namatrix), fill=T,use.names=T)
+
+testmat1= read_excel("C:/Users/tolga/Desktop/OKUL/IE 360/HWs/HW3/GercekZamanliTuketim-01012016-20052021_excel.xlsx")
+testmat1=as.data.table(testmat1)
+testmat1$Date=as.Date(testmat1$Date)
+
+
+consdatanew[is.na(Date)==T, Date:=testmat1$Date[46873:47208]]
+consdatanew[is.na(fitted)==T & Date>'2021-05-01',fitted:=model_forecast_adjusted]
+
+actualdata=read.csv("C:/Users/tolga/Desktop/OKUL/IE 360/HWs/HW3/Data/GercekZamanliTuketim-01012016-20052021.csv")
+actualdata$Tarih=as.Date(actualdata$Tarih, format= "%d.%m.%Y")
+
+actualdata$Tüketim.Miktarı..MWh.=gsub("\\.", "", (actualdata$Tüketim.Miktarı..MWh.))
+actualdata$Tüketim.Miktarı..MWh.=gsub("\\,", ".", (actualdata$Tüketim.Miktarı..MWh.))
+
+
+actualdata$Tüketim.Miktarı..MWh.=as.numeric(actualdata$Tüketim.Miktarı..MWh.)
+
+colnames(actualdata)=c("Date","Time","Consumption")
+
+actualdata=as.data.table(actualdata)
+
+consdatanew$actual=actualdata$Consumption
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+ggplot(data=consdatanew, aes(x=Date))+ geom_line(aes(y=actual,color="Actual"),size=0.5)+
+  geom_line(aes(y=fitted,color='Fitted'),size=0.5)+
+  labs(title = "Fitted vs Actual", x = "Date",y="Hourly Electricity Consumption (MwH)" ,subtitle = "Data from Jan-2016 to May-2021",caption = "Source:EPİAŞ") +
+  theme(axis.title.y = element_text(color = "dark blue", face = "bold"),plot.title = element_text(color = "blue", size = 15, face = "bold",hjust=0.5), 
+        plot.subtitle = element_text(size = 10, face = "bold", hjust = 0.5), axis.title.x=element_text(colour="Dark Blue", face="bold"),
+        plot.caption = element_text(face = "italic", hjust = 0))+
+  scale_x_date(date_breaks = "1 year",labels=date_format("%Y"))
+
+```
+
+• The plot show that our model fits the data and the predictions for the last 14 days are also reasonable.
+
+• Taking a closer look at the forecasted 14 days can be useful.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+plot(consdatanew$actual[46873:47208], type="l",col="red", ylab="Hourly Consumption (MwH)", xlab="Hours  (From May 3rd 2021, 12:00 to May 20th 2021, 24:00)")
+points(consdatanew$fitted[46873:47208], type = "l", col = "blue")
+```
+
+• The Red coloured plot shows the actual values and blue color shows the forecasted values.
+
+• By looking at the graph, we can conclude that our forecasts are reasonable and the seasonality in the data is well displayed. Howeever, since we have only one trend value, our forecasts would get away from the actual values in time.
+
+## 3.1) Evaluation
+
+• In order to evaluate the performance of the model and the predictions, we will calculate some performance measures based on the actual and forecasted values.
+
+• Some data manipulations must be performed in order to calculate
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+actual14dayshourly=as.data.table(tail(actualdata$Consumption,n=336))
+actual14dayshourly[,Date:=as.Date(tail(actualdata$Date,n=336))]
+colnames(actual14dayshourly)=c("Actual","Date")
+
+actual14daysdaily= actual14dayshourly[,list(ActualDaily=mean(Actual, na.rm=T)),by=list(Date)]
+
+
+forecasted14dayshourly=as.data.table(tail(consdatanew$fitted,n=336))
+forecasted14dayshourly[,Date:=as.Date(tail(consdatanew$Date,n=336))]
+colnames(forecasted14dayshourly)=c("Forecasted","Date")
+
+forecasted14daysdaily= forecasted14dayshourly[,list(ForecastedDaily=mean(Forecasted, na.rm=T)),by=list(Date)]
+
+predrealdaily= as.data.table(actual14daysdaily$Date)
+predrealdaily[,ActualDaily:=actual14daysdaily$ActualDaily]
+predrealdaily[,ForecastedDaily:=as.numeric(forecasted14daysdaily$ForecastedDaily)]
+predrealdaily$ForecastedDaily=as.numeric(predrealdaily$ForecastedDaily)
+
+colnames(predrealdaily)=c("Date", "ActualDaily", "ForecastedDaily")
+
+
+```
+
+• Two functions are written in order to calculate performance measures. The functions take predicted and actual values as inputs and the performance measures are its output. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+stats <- function(actual, forecasted){
+  n=length(actual)
+  error = actual-forecasted
+  mean=mean(actual)
+  sd=sd(actual)
+  bias = sum(error)/sum(actual)
+  mape = sum(abs(error/actual))/n
+  mad = sum(abs(error))/n
+  wmape = mad/mean
+  l = data.frame(n,mean,sd,bias,mape,mad,wmape)
+  return(l)
+}
+
+predrealdaily[, stats(ActualDaily,ForecastedDaily)]
+
+```
+• Overall bias, MAPE and WMAPE are small enough for our purposes.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+
+actual14dayshourly[,Forecasted:=forecasted14dayshourly$Forecasted]
+actual14dayshourly[, Error:=Actual-Forecasted]
+
+actual14dayshourly[, AbsError:=abs(Error)]
+actual14dayshourly[, Bias:=Error/Actual]
+actual14dayshourly[, Ape:=AbsError/Actual]
+Errors = actual14dayshourly[, list(DailyActual=mean(Actual, na.rm=TRUE), DailyForecast=mean(Forecasted, na.rm=TRUE), dailybias=mean(Bias, na.rm=TRUE),dailymape=mean(Ape, na.rm=TRUE)), by=list(as.Date(Date))]
+Errors
+
+```
+
+• Daily bias, MAPE and WMAPE are also small enough as well. 
+
+# 4) Conclusion
+
+• In conclusion, we tried understand the behavior of the selected time series by isnpecting and decomposing at different time levels. Different AR and MA models have been tested and ARMA(4,6) has been selected for forecasting purposes. 
+
+• The results of the forecast is relatively good in a sense that it represents the actual data very closely. However there ara many improvements that can be done to improve the performance of the model. For the purposes of this assignment, our model seems to hold enough.
+
+
+
